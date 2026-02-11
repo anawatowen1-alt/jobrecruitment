@@ -1,0 +1,5 @@
+{
+  "name": "Internal Job Board",
+  "description": "Enterprise-grade internal job board for HR and management with persistent storage and AI features.",
+  "requestFramePermissions": []
+}
