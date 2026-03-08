@@ -4,6 +4,7 @@ import path from "path";
 import multer from "multer";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { createClient } from '@supabase/supabase-js'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,7 +58,30 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // ขยายขีดจำกัดเป็น 10MB ชั่วคราวเพื่อทดสอบ
 });
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
+export const uploadFile = async (file: File) => {
+  const fileName = `${Date.now()}_${file.name}`;
+  
+  // อัปโหลดไฟล์ไปที่ Supabase Storage
+  const { data, error } = await supabase.storage
+    .from('uploads') // ชื่อ Bucket ที่สร้างไว้
+    .upload(fileName, file);
+
+  if (error) {
+    throw new Error('Upload failed: ' + error.message);
+  }
+
+  // ดึง Public URL ของไฟล์มาเก็บไว้ใน Database (แทน Path ในเครื่อง)
+  const { data: publicUrlData } = supabase.storage
+    .from('uploads')
+    .getPublicUrl(fileName);
+
+  return publicUrlData.publicUrl; // ส่ง URL นี้ไปบันทึกลง Prisma/Database
+};
 app.use(express.json());
 app.use("/uploads", express.static(uploadDir));
 
