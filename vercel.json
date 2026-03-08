@@ -1,13 +1,13 @@
 {
   "version": 2,
   "functions": {
-    "api/server.ts": {
+    "server.ts": {
       "includeFiles": "dist/**"
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/server.ts" },
-    { "source": "/uploads/(.*)", "destination": "/api/server.ts" },
-    { "source": "/(.*)", "destination": "/api/server.ts" }
+    { "source": "/api/(.*)", "destination": "/server.ts" },
+    { "source": "/uploads/(.*)", "destination": "/server.ts" },
+    { "source": "/(.*)", "destination": "/server.ts" }
   ]
 }
