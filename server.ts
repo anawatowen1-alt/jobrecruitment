@@ -363,4 +363,9 @@ async function startServer() {
   });
 }
 
-startServer();
+// ตรวจสอบว่าถ้าไม่ได้รันบน Vercel ให้รัน app.listen ปกติ
+if (process.env.NODE_ENV !== "production") {
+  startServer();
+}
+
+export default app; // เพิ่มบรรทัดนี้เพื่อให้ Vercel ใช้งานได้
