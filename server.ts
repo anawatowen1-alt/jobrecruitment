@@ -1,19 +1,31 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import { PrismaClient } from "@prisma/client";
 import path from "path";
 import multer from "multer";
 import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // --- Prisma Lazy Initialization ---
 let prismaClient: PrismaClient | null = null;
 
 function getPrisma() {
   if (!prismaClient) {
-    const url = process.env.DATABASE_URL;
-    if (!url || (!url.startsWith("postgresql://") && !url.startsWith("postgres://"))) {
-      throw new Error("DATABASE_URL is not configured correctly. Please set a valid Supabase connection string starting with postgresql:// or postgres:// in your environment variables.");
+    const url = process.env.DATABASE_URL?.trim();
+    if (!url) {
+      throw new Error("DATABASE_URL is missing. Please set your connection string (PostgreSQL or SQLite) in your environment variables.");
     }
+    
+    // Allow both PostgreSQL and SQLite
+    const isPostgres = url.startsWith("postgresql://") || url.startsWith("postgres://");
+    const isSqlite = url.startsWith("file:");
+    
+    if (!isPostgres && !isSqlite) {
+      throw new Error(`DATABASE_URL is invalid. It must start with 'postgresql://', 'postgres://', or 'file:'. Current value starts with: ${url.substring(0, 15)}...`);
+    }
+    
     prismaClient = new PrismaClient();
   }
   return prismaClient;
@@ -343,29 +355,34 @@ app.use((err: any, req: any, res: any, next: any) => {
   res.status(500).json({ error: "เกิดข้อผิดพลาดที่เซิร์ฟเวอร์" });
 });
 
-// --- Vite Middleware ---
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+// --- Vite Middleware & Static Files ---
+if (process.env.NODE_ENV === "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  app.use(express.static(distPath));
+  
+  // API routes are already registered above, so this catch-all will handle the frontend
+  app.get("*", (req, res, next) => {
+    // If it's an API request that didn't match any route, don't send index.html
+    if (req.path.startsWith("/api/")) {
+      return next();
+    }
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+} else {
+  // In development, we use Vite middleware
+  async function setupDevServer() {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
+    
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
     });
   }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  setupDevServer();
 }
 
-// ตรวจสอบว่าถ้าไม่ได้รันบน Vercel ให้รัน app.listen ปกติ
-if (process.env.NODE_ENV !== "production") {
-  startServer();
-}
-
-export default app; // เพิ่มบรรทัดนี้เพื่อให้ Vercel ใช้งานได้
+export default app;
