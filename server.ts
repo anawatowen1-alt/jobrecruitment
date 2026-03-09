@@ -4,7 +4,8 @@ import path from "path";
 import multer from "multer";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import { createClient } from '@supabase/supabase-js'
+
+import { put } from "@vercel/blob";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,72 +38,68 @@ const PORT = 3000;
 
 // --- File Upload Setup ---
 const uploadDir = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(uploadDir)) {
+if (process.env.NODE_ENV !== "production" && !fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    // ใช้ uploadDir (Absolute Path) แทนการใช้ string สั้นๆ เพื่อความชัวร์บน Windows
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const fileName = uniqueSuffix + "-" + file.originalname.replace(/\s+/g, "_"); // ลบช่องว่างในชื่อไฟล์ออก
-    console.log("Saving file as:", fileName);
-    cb(null, fileName);
-  },
-});
+// ใช้ Memory Storage สำหรับ Production (Vercel Blob) และ Disk Storage สำหรับ Development
+const storage = process.env.NODE_ENV === "production" 
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination: (req, file, cb) => {
+        cb(null, uploadDir);
+      },
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        const fileName = uniqueSuffix + "-" + file.originalname.replace(/\s+/g, "_");
+        cb(null, fileName);
+      },
+    });
 
 const upload = multer({ 
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // ขยายขีดจำกัดเป็น 10MB ชั่วคราวเพื่อทดสอบ
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
-export const uploadFile = async (file: File) => {
-  const fileName = `${Date.now()}_${file.name}`;
-  
-  // อัปโหลดไฟล์ไปที่ Supabase Storage
-  const { data, error } = await supabase.storage
-    .from('uploads') // ชื่อ Bucket ที่สร้างไว้
-    .upload(fileName, file);
-
-  if (error) {
-    throw new Error('Upload failed: ' + error.message);
-  }
-
-  // ดึง Public URL ของไฟล์มาเก็บไว้ใน Database (แทน Path ในเครื่อง)
-  const { data: publicUrlData } = supabase.storage
-    .from('uploads')
-    .getPublicUrl(fileName);
-
-  return publicUrlData.publicUrl; // ส่ง URL นี้ไปบันทึกลง Prisma/Database
-};
 app.use(express.json());
-app.use("/uploads", express.static(uploadDir));
+if (process.env.NODE_ENV !== "production") {
+  app.use("/uploads", express.static(uploadDir));
+}
 
 // --- API Routes ---
 
 // File Upload Endpoint
-app.post("/api/upload", (req, res, next) => {
-  console.log("Receive upload request...");
-  upload.single("resume")(req, res, (err) => {
-    if (err) {
-      console.error("Multer upload error:", err);
-      return res.status(400).json({ error: `Upload error: ${err.message}` });
-    }
+app.post("/api/upload", upload.single("resume"), async (req, res) => {
+  try {
+    console.log("Receive upload request...");
+    
     if (!req.file) {
       console.error("No file in request");
       return res.status(400).json({ error: "No file uploaded" });
     }
-    console.log("File uploaded successfully:", req.file.filename);
-    const fileUrl = `/uploads/${req.file.filename}`;
-    res.json({ url: fileUrl });
-  });
+
+    if (process.env.NODE_ENV === "production") {
+      // อัปโหลดไปยัง Vercel Blob
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+        return res.status(500).json({ error: "BLOB_READ_WRITE_TOKEN is missing in environment variables" });
+      }
+
+      const blob = await put(req.file.originalname, req.file.buffer, {
+        access: 'public',
+      });
+      
+      console.log("File uploaded to Vercel Blob:", blob.url);
+      return res.json({ url: blob.url });
+    } else {
+      // ใช้ Local Storage ในโหมด Development
+      console.log("File uploaded successfully locally:", req.file.filename);
+      const fileUrl = `/uploads/${req.file.filename}`;
+      return res.json({ url: fileUrl });
+    }
+  } catch (error: any) {
+    console.error("Upload error:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Auth Mock (For demo purposes, we'll use simple header-based auth or just return a user)
