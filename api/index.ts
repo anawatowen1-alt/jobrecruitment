@@ -389,8 +389,8 @@ if (process.env.NODE_ENV === "production") {
     }
     res.sendFile(path.join(distPath, "index.html"));
   });
-} else {
-  // In development, we use Vite middleware
+} else if (process.env.NODE_ENV !== "production") {
+  // รันเฉพาะในเครื่องตัวเอง (Development)
   async function setupDevServer() {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
