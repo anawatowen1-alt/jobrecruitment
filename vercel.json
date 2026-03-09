@@ -7,8 +7,8 @@
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/server.ts" },
-    { "source": "/uploads/(.*)", "destination": "/server.ts" },
-    { "source": "/(.*)", "destination": "/server.ts" }
+    { "source": "/api/(.*)", "destination": "/api/index.ts" },
+    { "source": "/uploads/(.*)", "destination": "/api/index.ts" },
+    { "source": "/(.*)", "destination": "/api/index.ts" }
   ]
 }
